@@ -99,11 +99,13 @@ These endpoints expose:
 The dashboard now includes:
 
 - live prediction table
-- value bet panel with status and market filters
+- value bet panel with status, market, league, and min-edge filters
 - live ROI summary
 - backtest runs list
+- backtest runs pagination
 - backtest detail panel
 - backtest compare panel
+- live vs selected historical delta cards
 - market-level backtest breakdown
 
 Backtest compare workflow:

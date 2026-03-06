@@ -142,6 +142,10 @@ a{color:var(--accent-blue);text-decoration:none}
 .compare-card{background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px;padding:14px}
 .compare-delta.pos{color:var(--accent-green)}
 .compare-delta.neg{color:var(--accent-red)}
+.pager{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text-secondary)}
+.pager-actions{display:flex;gap:8px}
+.pager-btn{background:var(--bg-tertiary);border:1px solid var(--border);color:var(--text-primary);padding:6px 10px;border-radius:8px;font-size:12px;font-family:inherit;cursor:pointer}
+.pager-btn:disabled{opacity:.45;cursor:not-allowed}
 
 /* Toast */
 .toast{position:fixed;bottom:24px;right:24px;background:var(--accent-red);color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(20px);transition:all .3s;z-index:999;pointer-events:none}
@@ -262,6 +266,22 @@ a{color:var(--accent-blue);text-decoration:none}
             <option value="all">All markets</option>
           </select>
         </div>
+        <div class="toolbar-group">
+          <span class="toolbar-label">League</span>
+          <select class="filter-select" id="vbLeagueFilter">
+            <option value="all">All leagues</option>
+          </select>
+        </div>
+        <div class="toolbar-group">
+          <span class="toolbar-label">Min Edge</span>
+          <select class="filter-select" id="vbEdgeFilter">
+            <option value="0">0%</option>
+            <option value="0.03">3%</option>
+            <option value="0.05" selected>5%</option>
+            <option value="0.08">8%</option>
+            <option value="0.10">10%</option>
+          </select>
+        </div>
       </div>
       <div id="vbBody"><div class="loading"><div class="spinner"></div></div></div>
     </div>
@@ -290,6 +310,13 @@ a{color:var(--accent-blue);text-decoration:none}
     <div class="panel">
       <div class="panel-title">Backtest Runs <span class="count" id="runCount">0</span></div>
       <div id="backtestList"><div class="loading"><div class="spinner"></div></div></div>
+      <div class="pager">
+        <span id="runPageInfo">Page 1</span>
+        <div class="pager-actions">
+          <button class="pager-btn" id="runPrev">Prev</button>
+          <button class="pager-btn" id="runNext">Next</button>
+        </div>
+      </div>
     </div>
     <div class="panel">
       <div class="panel-title">Backtest Detail <span class="count" id="detailLeague">--</span></div>
@@ -329,6 +356,9 @@ const state = {
   backtests: [],
   selectedRunId: null,
   backtestDetails: {},
+  backtestOffset: 0,
+  backtestLimit: 12,
+  liveRoi: null,
 };
 
 /* ── API Fetch Wrapper ── */
@@ -365,7 +395,7 @@ async function fetchAllData() {
     apiFetch('/api/dashboard/roi'),
     apiFetch('/api/predictions/upcoming', league ? { league } : {}),
     apiFetch('/api/predictions/value-bets'),
-    apiFetch('/api/backtests', league ? { league, limit: 12 } : { limit: 12 }),
+    apiFetch('/api/backtests', league ? { league, limit: state.backtestLimit, offset: state.backtestOffset } : { limit: state.backtestLimit, offset: state.backtestOffset }),
     apiFetch('/health'),
   ]);
 
@@ -514,12 +544,18 @@ function renderPredictions(preds) {
 function renderValueBets(vbs) {
   const statusFilter = document.getElementById('vbStatusFilter').value;
   const marketFilter = document.getElementById('vbMarketFilter').value;
+  const leagueFilter = document.getElementById('vbLeagueFilter').value;
+  const edgeFilter = parseFloat(document.getElementById('vbEdgeFilter').value || '0');
   const markets = [...new Set(vbs.map(v => v.market).filter(Boolean))].sort();
+  const leagues = [...new Set(vbs.map(v => v.league_code).filter(Boolean))].sort();
   syncMarketFilter(markets);
+  syncLeagueFilter(leagues);
 
   if (statusFilter === 'unsettled') vbs = vbs.filter(v => !v.result);
   if (statusFilter === 'settled') vbs = vbs.filter(v => !!v.result);
   if (marketFilter !== 'all') vbs = vbs.filter(v => v.market === marketFilter);
+  if (leagueFilter !== 'all') vbs = vbs.filter(v => v.league_code === leagueFilter);
+  vbs = vbs.filter(v => (v.edge || 0) >= edgeFilter);
 
   vbs = dedup(vbs, 'id');
   document.getElementById('vbCount').textContent = vbs.length;
@@ -558,6 +594,16 @@ function syncMarketFilter(markets) {
   );
   select.innerHTML = options.join('');
   select.value = markets.includes(current) || current === 'all' ? current : 'all';
+}
+
+function syncLeagueFilter(leagues) {
+  const select = document.getElementById('vbLeagueFilter');
+  const current = select.value;
+  const options = ['<option value="all">All leagues</option>'].concat(
+    leagues.map(l => `<option value="${l}">${l}</option>`)
+  );
+  select.innerHTML = options.join('');
+  select.value = leagues.includes(current) || current === 'all' ? current : 'all';
 }
 
 /* ── Render: Model Performance ── */
@@ -675,6 +721,7 @@ function renderROI(data) {
   document.getElementById('roiLive').textContent = data.roi != null ? (data.roi * 100).toFixed(1) + '%' : 'N/A';
   document.getElementById('roiHitRate').textContent = data.hit_rate != null ? (data.hit_rate * 100).toFixed(1) + '%' : 'N/A';
   document.getElementById('roiClv').textContent = data.avg_clv != null ? (data.avg_clv * 100).toFixed(2) + '%' : 'N/A';
+  state.liveRoi = data;
 }
 
 async function selectBacktest(runId) {
@@ -694,6 +741,9 @@ async function selectBacktest(runId) {
 function renderBacktests(backtests) {
   state.backtests = backtests;
   document.getElementById('runCount').textContent = backtests.length;
+  document.getElementById('runPageInfo').textContent = `Page ${Math.floor(state.backtestOffset / state.backtestLimit) + 1}`;
+  document.getElementById('runPrev').disabled = state.backtestOffset === 0;
+  document.getElementById('runNext').disabled = backtests.length < state.backtestLimit;
   if (backtests.length === 0) {
     document.getElementById('backtestList').innerHTML = '<div class="empty-state">No backtest runs found</div>';
     document.getElementById('backtestDetail').innerHTML = '<div class="empty-state">Run a backtest to populate this panel</div>';
@@ -777,11 +827,33 @@ function renderCompare(base, target) {
 
   document.getElementById('compareBody').innerHTML = `
     <div class="compare-grid">${compareCards}</div>
+    ${renderLiveVsSelected(target)}
     <div class="config-box">
       <div class="panel-title" style="padding:0 0 12px;border:none">Config Diff</div>
       ${renderConfigDiff(base.config_snapshot || {}, target.config_snapshot || {})}
     </div>
   `;
+}
+
+function renderLiveVsSelected(target) {
+  const live = state.liveRoi || {};
+  if (!live || live.roi == null) return '';
+  const targetSummary = target.report?.bet_summary || {};
+  const cards = [
+    ['Live ROI vs Selected', live.roi, target.roi],
+    ['Live Hit Rate vs Selected', live.hit_rate, targetSummary.hit_rate],
+    ['Live CLV vs Selected', live.avg_clv, targetSummary.avg_clv],
+  ].map(([label, liveValue, histValue]) => {
+    const delta = (liveValue ?? 0) - (histValue ?? 0);
+    const deltaClass = delta >= 0 ? 'pos' : 'neg';
+    const fmt = value => value == null ? '--' : (value * 100).toFixed(2) + '%';
+    return `<div class="compare-card">
+      <div class="detail-k">${label}</div>
+      <div class="detail-v">${fmt(liveValue)}</div>
+      <div class="detail-sub">Selected ${fmt(histValue)} · <span class="compare-delta ${deltaClass}">${delta >= 0 ? '+' : ''}${fmt(delta)}</span></div>
+    </div>`;
+  }).join('');
+  return `<div class="compare-grid">${cards}</div>`;
 }
 
 function renderConfigDiff(base, target) {
@@ -852,8 +924,18 @@ document.getElementById('leaguePills').addEventListener('click', e => {
 
 document.getElementById('vbStatusFilter').addEventListener('change', fetchAllData);
 document.getElementById('vbMarketFilter').addEventListener('change', fetchAllData);
+document.getElementById('vbLeagueFilter').addEventListener('change', fetchAllData);
+document.getElementById('vbEdgeFilter').addEventListener('change', fetchAllData);
 document.getElementById('compareBase').addEventListener('change', maybeRenderCompare);
 document.getElementById('compareTarget').addEventListener('change', maybeRenderCompare);
+document.getElementById('runPrev').addEventListener('click', () => {
+  state.backtestOffset = Math.max(0, state.backtestOffset - state.backtestLimit);
+  fetchAllData();
+});
+document.getElementById('runNext').addEventListener('click', () => {
+  state.backtestOffset += state.backtestLimit;
+  fetchAllData();
+});
 document.addEventListener('click', e => {
   const item = e.target.closest('.run-item');
   if (!item) return;
