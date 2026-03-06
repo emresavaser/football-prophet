@@ -135,6 +135,13 @@ a{color:var(--accent-blue);text-decoration:none}
 .mini-table{width:100%;border-collapse:collapse;font-size:12px}
 .mini-table th,.mini-table td{padding:10px 8px;border-bottom:1px solid var(--border);text-align:left}
 .mini-table th{color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.compare-panel{background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px}
+.compare-body{padding:16px}
+.compare-controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.compare-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.compare-card{background:var(--bg-tertiary);border:1px solid var(--border);border-radius:10px;padding:14px}
+.compare-delta.pos{color:var(--accent-green)}
+.compare-delta.neg{color:var(--accent-red)}
 
 /* Toast */
 .toast{position:fixed;bottom:24px;right:24px;background:var(--accent-red);color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(20px);transition:all .3s;z-index:999;pointer-events:none}
@@ -157,6 +164,7 @@ a{color:var(--accent-blue);text-decoration:none}
   .roi-grid{grid-template-columns:repeat(3,1fr)}
   .split-grid{grid-template-columns:1fr}
   .detail-grid,.config-grid{grid-template-columns:repeat(2,1fr)}
+  .compare-controls,.compare-grid{grid-template-columns:repeat(2,1fr)}
 }
 @media(max-width:640px){
   .header{padding:10px 14px}
@@ -165,6 +173,7 @@ a{color:var(--accent-blue);text-decoration:none}
   .model-health-grid{grid-template-columns:repeat(2,1fr)}
   .roi-grid{grid-template-columns:repeat(2,1fr)}
   .detail-grid,.config-grid{grid-template-columns:1fr}
+  .compare-controls,.compare-grid{grid-template-columns:1fr}
   .pred-table{font-size:11px}
   .pred-table th,.pred-table td{padding:8px 6px}
 }
@@ -287,6 +296,23 @@ a{color:var(--accent-blue);text-decoration:none}
       <div id="backtestDetail"><div class="empty-state">Select a backtest run</div></div>
     </div>
   </div>
+
+  <div class="compare-panel">
+    <div class="panel-title">Backtest Compare</div>
+    <div class="compare-body">
+      <div class="compare-controls">
+        <div>
+          <div class="toolbar-label" style="margin-bottom:6px">Baseline Run</div>
+          <select class="filter-select" id="compareBase"></select>
+        </div>
+        <div>
+          <div class="toolbar-label" style="margin-bottom:6px">Candidate Run</div>
+          <select class="filter-select" id="compareTarget"></select>
+        </div>
+      </div>
+      <div id="compareBody"><div class="empty-state">Load backtests to compare runs</div></div>
+    </div>
+  </div>
 </div>
 
 <!-- Toast -->
@@ -302,6 +328,7 @@ const state = {
   calibChart: null,
   backtests: [],
   selectedRunId: null,
+  backtestDetails: {},
 };
 
 /* ── API Fetch Wrapper ── */
@@ -655,8 +682,10 @@ async function selectBacktest(runId) {
   highlightSelectedRun();
   document.getElementById('backtestDetail').innerHTML = '<div class="loading"><div class="spinner"></div></div>';
   try {
-    const data = await apiFetch(`/api/backtests/${runId}`);
+    const data = state.backtestDetails[runId] || await apiFetch(`/api/backtests/${runId}`);
+    state.backtestDetails[runId] = data;
     renderBacktestDetail(data);
+    maybeRenderCompare();
   } catch (e) {
     document.getElementById('backtestDetail').innerHTML = '<div class="empty-state">Failed to load backtest detail</div>';
   }
@@ -687,8 +716,80 @@ function renderBacktests(backtests) {
       </div>
     </div>`).join('')}</div>`;
   document.getElementById('backtestList').innerHTML = html;
+  syncCompareSelectors(backtests);
   highlightSelectedRun();
   if (state.selectedRunId) selectBacktest(state.selectedRunId);
+}
+
+function syncCompareSelectors(backtests) {
+  const base = document.getElementById('compareBase');
+  const target = document.getElementById('compareTarget');
+  const options = backtests.map(run => `<option value="${run.run_id}">${run.run_id} · ${run.league_code || '--'} · ${run.roi != null ? (run.roi * 100).toFixed(1) + '%' : '--'}</option>`);
+  base.innerHTML = options.join('');
+  target.innerHTML = options.join('');
+  if (!backtests.length) return;
+  if (!base.value || !backtests.some(run => run.run_id === base.value)) base.value = backtests[0].run_id;
+  if (!target.value || !backtests.some(run => run.run_id === target.value)) target.value = backtests[Math.min(1, backtests.length - 1)].run_id;
+}
+
+async function ensureBacktestDetail(runId) {
+  if (!runId) return null;
+  if (!state.backtestDetails[runId]) {
+    state.backtestDetails[runId] = await apiFetch(`/api/backtests/${runId}`);
+  }
+  return state.backtestDetails[runId];
+}
+
+async function maybeRenderCompare() {
+  const baseId = document.getElementById('compareBase').value;
+  const targetId = document.getElementById('compareTarget').value;
+  if (!baseId || !targetId) {
+    document.getElementById('compareBody').innerHTML = '<div class="empty-state">Select two runs to compare</div>';
+    return;
+  }
+  try {
+    const [base, target] = await Promise.all([ensureBacktestDetail(baseId), ensureBacktestDetail(targetId)]);
+    renderCompare(base, target);
+  } catch (e) {
+    document.getElementById('compareBody').innerHTML = '<div class="empty-state">Failed to load comparison data</div>';
+  }
+}
+
+function renderCompare(base, target) {
+  const baseSummary = base.report?.bet_summary || {};
+  const targetSummary = target.report?.bet_summary || {};
+  const metrics = [
+    ['ROI', base.roi, target.roi],
+    ['Accuracy', base.accuracy, target.accuracy],
+    ['Hit Rate', baseSummary.hit_rate, targetSummary.hit_rate],
+    ['Avg CLV', baseSummary.avg_clv, targetSummary.avg_clv],
+  ];
+  const compareCards = metrics.map(([label, left, right]) => {
+    const delta = (right ?? 0) - (left ?? 0);
+    const deltaClass = delta >= 0 ? 'pos' : 'neg';
+    const fmt = value => value == null ? '--' : (value * 100).toFixed(2) + '%';
+    return `<div class="compare-card">
+      <div class="detail-k">${label}</div>
+      <div class="detail-v">${fmt(right)}</div>
+      <div class="detail-sub">Base ${fmt(left)} · <span class="compare-delta ${deltaClass}">${delta >= 0 ? '+' : ''}${fmt(delta)}</span></div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('compareBody').innerHTML = `
+    <div class="compare-grid">${compareCards}</div>
+    <div class="config-box">
+      <div class="panel-title" style="padding:0 0 12px;border:none">Config Diff</div>
+      ${renderConfigDiff(base.config_snapshot || {}, target.config_snapshot || {})}
+    </div>
+  `;
+}
+
+function renderConfigDiff(base, target) {
+  const keys = [...new Set([...Object.keys(base), ...Object.keys(target)])].sort();
+  if (!keys.length) return '<div class="empty-state">No config data available</div>';
+  return `<table class="mini-table"><thead><tr><th>Key</th><th>Base</th><th>Candidate</th></tr></thead><tbody>
+    ${keys.map(key => `<tr><td>${key}</td><td>${base[key] ?? '--'}</td><td>${target[key] ?? '--'}</td></tr>`).join('')}
+  </tbody></table>`;
 }
 
 function highlightSelectedRun() {
@@ -751,6 +852,8 @@ document.getElementById('leaguePills').addEventListener('click', e => {
 
 document.getElementById('vbStatusFilter').addEventListener('change', fetchAllData);
 document.getElementById('vbMarketFilter').addEventListener('change', fetchAllData);
+document.getElementById('compareBase').addEventListener('change', maybeRenderCompare);
+document.getElementById('compareTarget').addEventListener('change', maybeRenderCompare);
 document.addEventListener('click', e => {
   const item = e.target.closest('.run-item');
   if (!item) return;

@@ -10,7 +10,7 @@ from api.routes.backtests import get_backtest, list_backtests
 
 
 class _FakeDB:
-    async def list_backtests(self, league_code=None, limit: int = 20):
+    async def list_backtests(self, league_code=None, limit: int = 20, offset: int = 0):
         return [
             SimpleNamespace(
                 run_id="run-2",
@@ -57,7 +57,7 @@ class BacktestsRouteTests(IsolatedAsyncioTestCase):
         prophet = SimpleNamespace(db=_FakeDB())
 
         with patch("api.app.get_prophet", return_value=prophet):
-            payload = await list_backtests(league="pl", limit=5)
+            payload = await list_backtests(league="pl", limit=5, offset=2)
 
         self.assertEqual(payload.total, 1)
         self.assertEqual(payload.backtests[0].run_id, "run-2")

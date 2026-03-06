@@ -361,6 +361,7 @@ class DatabaseManager:
         self,
         league_code: Optional[str] = None,
         limit: int = 20,
+        offset: int = 0,
     ) -> Sequence[BacktestResult]:
         async with self.session() as s:
             conditions = []
@@ -370,7 +371,7 @@ class DatabaseManager:
             stmt = select(BacktestResult)
             if conditions:
                 stmt = stmt.where(and_(*conditions))
-            stmt = stmt.order_by(BacktestResult.created_at.desc(), BacktestResult.id.desc()).limit(limit)
+            stmt = stmt.order_by(BacktestResult.created_at.desc(), BacktestResult.id.desc()).offset(offset).limit(limit)
             result = await s.execute(stmt)
             return result.scalars().all()
 

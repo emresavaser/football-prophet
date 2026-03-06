@@ -23,12 +23,16 @@ def _loads_json(raw: Optional[str]) -> dict[str, Any]:
 
 
 @router.get("", response_model=BacktestListSchema)
-async def list_backtests(league: Optional[str] = None, limit: int = 20):
+async def list_backtests(league: Optional[str] = None, limit: int = 20, offset: int = 0):
     """List recent backtest runs."""
     from api.app import get_prophet
 
     prophet = get_prophet()
-    rows = await prophet.db.list_backtests(league_code=league.upper() if league else None, limit=limit)
+    rows = await prophet.db.list_backtests(
+        league_code=league.upper() if league else None,
+        limit=limit,
+        offset=offset,
+    )
 
     return BacktestListSchema(
         backtests=[

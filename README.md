@@ -103,7 +103,15 @@ The dashboard now includes:
 - live ROI summary
 - backtest runs list
 - backtest detail panel
+- backtest compare panel
 - market-level backtest breakdown
+
+Backtest compare workflow:
+
+1. Open the dashboard
+2. Load recent backtests from the right-hand historical panel
+3. Pick a baseline and candidate run in the compare section
+4. Inspect ROI, accuracy, hit rate, CLV, and config differences
 
 ## Ownership Split
 
