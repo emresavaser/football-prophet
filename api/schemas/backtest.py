@@ -38,3 +38,5 @@ class BacktestDetailSchema(BacktestSummarySchema):
 class BacktestListSchema(BaseModel):
     backtests: list[BacktestSummarySchema]
     total: int
+    offset: int = 0
+    limit: int = 20

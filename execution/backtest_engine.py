@@ -406,6 +406,7 @@ class BacktestEngine:
             report_json=json.dumps({
                 "bet_summary": bet_summary,
                 "value_bets_by_market": bet_summary["by_market"],
+                "bet_results": results["bet_results"][-250:],
             }),
         )
 

@@ -146,6 +146,7 @@ a{color:var(--accent-blue);text-decoration:none}
 .pager-actions{display:flex;gap:8px}
 .pager-btn{background:var(--bg-tertiary);border:1px solid var(--border);color:var(--text-primary);padding:6px 10px;border-radius:8px;font-size:12px;font-family:inherit;cursor:pointer}
 .pager-btn:disabled{opacity:.45;cursor:not-allowed}
+.detail-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 
 /* Toast */
 .toast{position:fixed;bottom:24px;right:24px;background:var(--accent-red);color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(20px);transition:all .3s;z-index:999;pointer-events:none}
@@ -359,6 +360,7 @@ const state = {
   backtestOffset: 0,
   backtestLimit: 12,
   liveRoi: null,
+  activeBacktestDetail: null,
 };
 
 /* ── API Fetch Wrapper ── */
@@ -871,10 +873,12 @@ function highlightSelectedRun() {
 }
 
 function renderBacktestDetail(run) {
+  state.activeBacktestDetail = run;
   document.getElementById('detailLeague').textContent = run.league_code || '--';
   const summary = run.report?.bet_summary || {};
   const config = run.config_snapshot || {};
   const marketBreakdown = run.report?.value_bets_by_market || {};
+  const betResults = run.report?.bet_results || [];
   const html = `
     <div class="run-detail">
       <div class="detail-grid">
@@ -893,8 +897,25 @@ function renderBacktestDetail(run) {
         <div class="panel-title" style="padding:0 0 12px;border:none">Market Breakdown</div>
         ${renderMarketBreakdownTable(marketBreakdown)}
       </div>
+      <div class="config-box">
+        <div class="detail-toolbar">
+          <div class="panel-title" style="padding:0;border:none">Bet Drilldown</div>
+          <div class="toolbar-group">
+            <select class="filter-select" id="detailMarketFilter">
+              <option value="all">All markets</option>
+            </select>
+            <select class="filter-select" id="detailResultFilter">
+              <option value="all">All results</option>
+              <option value="WIN">Wins</option>
+              <option value="LOSS">Losses</option>
+            </select>
+          </div>
+        </div>
+        <div id="betDrilldown">${renderBetDrilldownTable(betResults)}</div>
+      </div>
     </div>`;
   document.getElementById('backtestDetail').innerHTML = html;
+  syncDetailMarketFilter(betResults);
 }
 
 function renderMarketBreakdownTable(markets) {
@@ -910,6 +931,45 @@ function renderMarketBreakdownTable(markets) {
         <td>${stats.avg_clv != null ? (stats.avg_clv * 100).toFixed(2) + '%' : '--'}</td>
       </tr>`).join('')}
   </tbody></table>`;
+}
+
+function syncDetailMarketFilter(bets) {
+  const select = document.getElementById('detailMarketFilter');
+  if (!select) return;
+  const markets = [...new Set(bets.map(b => b.market).filter(Boolean))].sort();
+  const current = select.value || 'all';
+  select.innerHTML = ['<option value="all">All markets</option>'].concat(
+    markets.map(m => `<option value="${m}">${m}</option>`)
+  ).join('');
+  select.value = markets.includes(current) || current === 'all' ? current : 'all';
+}
+
+function renderBetDrilldownTable(bets) {
+  if (!bets.length) return '<div class="empty-state">No bet-level records available for this run</div>';
+  return `<table class="mini-table"><thead><tr><th>Market</th><th>Odds</th><th>Stake</th><th>Edge</th><th>Result</th><th>PnL</th><th>CLV</th></tr></thead><tbody>
+    ${bets.map(bet => `
+      <tr>
+        <td>${bet.market ?? '--'}</td>
+        <td>${bet.odds != null ? Number(bet.odds).toFixed(2) : '--'}</td>
+        <td>${bet.stake != null ? Number(bet.stake).toFixed(4) : '--'}</td>
+        <td>${bet.edge != null ? (Number(bet.edge) * 100).toFixed(2) + '%' : '--'}</td>
+        <td>${bet.result ?? '--'}</td>
+        <td>${bet.pnl != null ? (Number(bet.pnl) >= 0 ? '+' : '') + Number(bet.pnl).toFixed(4) : '--'}</td>
+        <td>${bet.clv != null ? (Number(bet.clv) * 100).toFixed(2) + '%' : '--'}</td>
+      </tr>`).join('')}
+  </tbody></table>`;
+}
+
+function updateBetDrilldown() {
+  const run = state.activeBacktestDetail;
+  if (!run) return;
+  const marketFilter = document.getElementById('detailMarketFilter')?.value || 'all';
+  const resultFilter = document.getElementById('detailResultFilter')?.value || 'all';
+  let bets = [...(run.report?.bet_results || [])];
+  if (marketFilter !== 'all') bets = bets.filter(b => b.market === marketFilter);
+  if (resultFilter !== 'all') bets = bets.filter(b => b.result === resultFilter);
+  const container = document.getElementById('betDrilldown');
+  if (container) container.innerHTML = renderBetDrilldownTable(bets);
 }
 
 /* ── League Selector ── */
@@ -940,6 +1000,11 @@ document.addEventListener('click', e => {
   const item = e.target.closest('.run-item');
   if (!item) return;
   selectBacktest(item.dataset.runId);
+});
+document.addEventListener('change', e => {
+  if (e.target.id === 'detailMarketFilter' || e.target.id === 'detailResultFilter') {
+    updateBetDrilldown();
+  }
 });
 
 /* ── Auto Refresh ── */

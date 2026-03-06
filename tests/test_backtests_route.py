@@ -48,7 +48,7 @@ class _FakeDB:
             avg_edge=0.08,
             model_weights_used=json.dumps({"elo": 0.3, "ml": 0.2}),
             config_snapshot=json.dumps({"staking_policy": "flat"}),
-            report_json=json.dumps({"bet_summary": {"roi": 0.12}}),
+            report_json=json.dumps({"bet_summary": {"roi": 0.12}, "bet_results": [{"market": "home_win", "pnl": 0.5}]}),
         )
 
 
@@ -60,6 +60,8 @@ class BacktestsRouteTests(IsolatedAsyncioTestCase):
             payload = await list_backtests(league="pl", limit=5, offset=2)
 
         self.assertEqual(payload.total, 1)
+        self.assertEqual(payload.offset, 2)
+        self.assertEqual(payload.limit, 5)
         self.assertEqual(payload.backtests[0].run_id, "run-2")
         self.assertEqual(payload.backtests[0].league_code, "PL")
 
@@ -73,3 +75,4 @@ class BacktestsRouteTests(IsolatedAsyncioTestCase):
         self.assertEqual(payload.model_weights_used["elo"], 0.3)
         self.assertEqual(payload.config_snapshot["staking_policy"], "flat")
         self.assertEqual(payload.report["bet_summary"]["roi"], 0.12)
+        self.assertEqual(payload.report["bet_results"][0]["market"], "home_win")

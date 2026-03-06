@@ -54,6 +54,8 @@ async def list_backtests(league: Optional[str] = None, limit: int = 20, offset: 
             for row in rows
         ],
         total=len(rows),
+        offset=offset,
+        limit=limit,
     )
 
 

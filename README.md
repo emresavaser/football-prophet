@@ -104,6 +104,7 @@ The dashboard now includes:
 - backtest runs list
 - backtest runs pagination
 - backtest detail panel
+- backtest bet-level drilldown table
 - backtest compare panel
 - live vs selected historical delta cards
 - market-level backtest breakdown
